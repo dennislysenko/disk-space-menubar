@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.diskspace.menubar</string>
+
+    <key>ProcessType</key>
+    <string>Interactive</string>
+
+    <key>ProgramArguments</key>
+    <array>
+        <string>/Users/dennis/dev/disk-space-menubar/venv/bin/python</string>
+        <string>/Users/dennis/dev/disk-space-menubar/disk_space.py</string>
+    </array>
+
+    <key>RunAtLoad</key>
+    <true/>
+
+    <key>KeepAlive</key>
+    <true/>
+
+    <key>StandardErrorPath</key>
+    <string>/Users/dennis/Library/Logs/diskspace-error.log</string>
+
+    <key>StandardOutPath</key>
+    <string>/Users/dennis/Library/Logs/diskspace-output.log</string>
+
+    <key>WorkingDirectory</key>
+    <string>/Users/dennis/dev/disk-space-menubar</string>
+</dict>
+</plist>
