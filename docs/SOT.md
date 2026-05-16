@@ -15,7 +15,7 @@ Disk Space Menu Bar is a macOS menu bar app that shows your real free disk space
 ## Core Features
 
 ### Menu Bar Display
-- Shows free disk space in GB (e.g., "49GB")
+- Shows available disk space in GB (e.g., "80GB"), matching Finder / System Settings
 - Native SF Symbol icon changes based on severity
 - Refreshes every 60 seconds
 - No dock icon — runs as a pure menu bar utility
@@ -35,14 +35,15 @@ Icons are rendered using `NSImageSymbolConfiguration.configurationWithHierarchic
 Click the menu bar item to see:
 - **Total:** full APFS container capacity in GB
 - **Used:** space consumed by all volumes, with percentage
-- **Free:** unallocated space in GB
+- **Available:** what Finder/System Settings reports — unallocated + purgeable (snapshots, evictable iCloud files, caches)
+- **Unallocated:** strict "right now, no reclaiming needed" free space from the APFS container
 - Separator
 - Quit button
 
-### Disk Space Source
-- Uses `diskutil apfs list` to read the APFS container directly
-- Parses `Size (Capacity Ceiling)`, `Capacity In Use By Volumes`, and `Capacity Not Allocated`
-- This gives accurate numbers that account for snapshots, purgeable space, and multi-volume containers — unlike `df` which reports misleading figures on APFS
+### Disk Space Sources
+- `diskutil apfs list` for `Size (Capacity Ceiling)`, `Capacity In Use By Volumes`, and `Capacity Not Allocated` (the strict container view)
+- `NSURL` resource key `NSURLVolumeAvailableCapacityForImportantUsageKey` on `/` for the "Available" figure — this matches what Finder, System Settings, and `df` show because it adds purgeable space (Time Machine local snapshots, evictable iCloud content, etc.) on top of unallocated bytes
+- The menu bar title and color thresholds use the **Available** number, since that's what users see elsewhere in macOS
 
 ---
 
