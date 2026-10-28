@@ -1,6 +1,6 @@
 # Source of Truth - Disk Space Menu Bar
 
-**Last Updated:** 2026-04-05
+**Last Updated:** 2026-10-28
 
 Master reference for all features and behavior. Update this file when adding or modifying functionality.
 
@@ -38,7 +38,27 @@ Click the menu bar item to see:
 - **Available:** what Finder/System Settings reports — unallocated + purgeable (snapshots, evictable iCloud files, caches)
 - **Unallocated:** strict "right now, no reclaiming needed" free space from the APFS container
 - Separator
+- Cleanup sections (see below), then **Rescan now**
+- Separator
 - Quit button
+
+### Cleanup Watchers
+Space that builds up while coding agents build apps and run simulators. Scanned by `watchers.py` on a background thread at launch and every 15 minutes (~10 s per scan). The header shows the total reclaimable and when it was last scanned. Each section lists its items with size and reason, and is hidden when empty.
+
+| Section | Flagged when | Clicking an item |
+|---|---|---|
+| Stale DerivedData | `~/Library/Developer/Xcode/DerivedData/<Project>-<hash>` whose `info.plist` `LastAccessedDate` is 7+ days old, or whose `WorkspacePath` no longer exists (e.g. a removed worktree) | Move to Trash |
+| Stray build folders | Xcode `-derivedDataPath` folders (anything containing `Build/Intermediates.noindex`) and SwiftPM `.build` folders under `~/dev`, unused 7+ days | Move to Trash |
+| Idle simulators | Devices not booted for 14+ days (by `device.plist` mtime) using 50+ MB, or whose runtime is missing. Also lists installed runtimes with size, device count and last use (info only) | `simctl delete` |
+| Stale worktrees | Git worktrees under `~/dev` repos idle 7+ days, or whose folder is gone | `git worktree remove` (no `--force`; branch kept). Dirty worktrees are reveal-only |
+| Big caches | Any folder in `~/Library/Caches` or `~/.cache`, plus `~/.npm` and the pnpm store, over 1 GB | Move to Trash. macOS-managed caches and the pnpm store are reveal-only |
+| Temp & swap | Always shown: `/private/tmp`, `$TMPDIR`, swap used, uptime. Becomes **Reboot recommended** at 15 GB combined, since a reboot clears all three | Info only |
+
+Every removal asks for confirmation (with a "Reveal in Finder" option), and sections with 2+ removable items get a **Clean up all…** entry. Caches are not counted toward "reclaimable" since they're in use and refill.
+
+The menu bar title gets a `•` when 5+ GB is reclaimable and a `↻` when a reboot is recommended.
+
+Thresholds are constants at the top of `watchers.py` (`STALE_*_DAYS`, `MIN_CACHE_BYTES`, `REBOOT_RECLAIM_BYTES`, `SCAN_ROOTS`) and `disk_space.py` (`SCAN_INTERVAL_SECONDS`, `CLEANABLE_BADGE_BYTES`).
 
 ### Disk Space Sources
 - `diskutil apfs list` for `Size (Capacity Ceiling)`, `Capacity In Use By Volumes`, and `Capacity Not Allocated` (the strict container view)
@@ -58,7 +78,8 @@ Click the menu bar item to see:
 
 | File | Purpose |
 |---|---|
-| `disk_space.py` | Main app (~125 lines) |
+| `disk_space.py` | Main app: menu, icon, cleanup actions |
+| `watchers.py` | Read-only cleanup scans; run directly to print a report |
 | `requirements.txt` | Python dependencies (just `rumps`) |
 | `com.diskspace.menubar.plist` | LaunchAgent config |
 | `restart_service.sh` | Service restart helper |
