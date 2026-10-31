@@ -141,7 +141,7 @@ def remove_item(item):
 
 # (section title, Report attribute, confirm button) in menu order
 SECTIONS = [
-    ("Stale DerivedData", 'derived_data', "Move to Trash"),
+    ("DerivedData", 'derived_data', "Move to Trash"),
     ("Stray build folders", 'build_dirs', "Move to Trash"),
     ("Idle simulators", 'simulators', "Delete"),
     ("Stale worktrees", 'worktrees', "Remove"),
@@ -240,7 +240,14 @@ class DiskSpaceApp(rumps.App):
             section = self._section_items[attr]
             if len(section):  # rumps' clear() crashes if no submenu exists yet
                 section.clear()
-            section.title = f"{title}: {len(items)} · {fmt_size(sum(i.size for i in items))}"
+            flagged = [i for i in items if i.flagged]
+            if attr == 'derived_data':
+                # Lists every folder, so lead with the total and call out the stale share
+                section.title = f"{title}: {fmt_size(sum(i.size for i in items))}"
+                if flagged:
+                    section.title += f" · {len(flagged)} stale ({fmt_size(sum(i.size for i in flagged))})"
+            else:
+                section.title = f"{title}: {len(items)} · {fmt_size(sum(i.size for i in items))}"
             for item in items:
                 label = f"{item.label} · {fmt_size(item.size)}"
                 if item.note:
@@ -248,12 +255,18 @@ class DiskSpaceApp(rumps.App):
                 menu_item = rumps.MenuItem(label, callback=self._on_item)
                 menu_item.cleanup_item = item
                 section.add(menu_item)
-            removable = [i for i in items if i.removable]
+            removable = [i for i in flagged if i.removable]
             if len(removable) > 1 and attr != 'caches':
                 section.add(None)
-                all_item = rumps.MenuItem(f"Clean up all {len(removable)}…", callback=self._on_section)
+                word = "stale" if attr == 'derived_data' else "all"
+                all_item = rumps.MenuItem(f"Clean up {word} {len(removable)}…", callback=self._on_section)
                 all_item.section_attr = attr
                 section.add(all_item)
+            unavailable = [i for i in items if i.extra.get('unavailable')]
+            if unavailable:
+                section.add(None)
+                section.add(rumps.MenuItem(f"Delete {len(unavailable)} unavailable simulators…",
+                                           callback=self._on_delete_unavailable))
             if attr == 'simulators' and report.runtimes:
                 section.add(None)
                 for label, size, idle, devices in report.runtimes:
@@ -301,7 +314,7 @@ class DiskSpaceApp(rumps.App):
     def _on_section(self, sender):
         attr = sender.section_attr
         title, verb = next((t, v) for t, a, v in SECTIONS if a == attr)
-        items = [i for i in getattr(self._report, attr) if i.removable]
+        items = [i for i in getattr(self._report, attr) if i.removable and i.flagged]
         listing = "\n".join(f"• {i.label} ({fmt_size(i.size)})" for i in items[:15])
         if len(items) > 15:
             listing += f"\n…and {len(items) - 15} more"
@@ -316,6 +329,23 @@ class DiskSpaceApp(rumps.App):
                 failures.append(f"{item.label}: {err or 'unknown error'}")
         if failures:
             rumps.alert(title=f"Some {title.lower()} couldn't be cleaned up", message="\n".join(failures))
+        self._start_scan()
+
+    def _on_delete_unavailable(self, _):
+        """Simulators whose runtime is gone can never boot again; simctl removes them all at once."""
+        items = [i for i in self._report.simulators if i.extra.get('unavailable')]
+        listing = "\n".join(f"• {i.label} ({fmt_size(i.size)})" for i in items[:15])
+        if len(items) > 15:
+            listing += f"\n…and {len(items) - 15} more"
+        total = fmt_size(sum(i.size for i in items))
+        if rumps.alert(title=f"Delete {len(items)} unavailable simulators ({total})?",
+                       message=listing + "\n\nRuns `xcrun simctl delete unavailable`.",
+                       ok="Delete", cancel="Cancel") != 1:
+            return
+        r = subprocess.run(['xcrun', 'simctl', 'delete', 'unavailable'], capture_output=True, text=True)
+        if r.returncode != 0:
+            rumps.alert(title="Couldn't delete unavailable simulators",
+                        message=r.stderr.strip() or "Unknown error")
         self._start_scan()
 
     def _set_icon_direct(self, nsimage):

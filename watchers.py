@@ -6,6 +6,7 @@ Everything here is read-only. Each check returns plain dataclasses that the
 menu bar app renders; deleting is left to explicit, confirmed menu actions.
 """
 
+import calendar
 import json
 import os
 import plistlib
@@ -48,6 +49,7 @@ class Item:
     idle_days: float
     note: str = ''
     removable: bool = True   # False = only safe to reveal (e.g. dirty worktree)
+    flagged: bool = True     # False = listed for context only (e.g. DerivedData in active use)
     extra: dict = field(default_factory=dict)
 
 
@@ -82,7 +84,7 @@ class Report:
     def cleanable_bytes(self):
         # Caches are excluded: they're in use and refill, so they shouldn't trigger the badge
         items = self.derived_data + self.simulators + self.worktrees + self.build_dirs
-        return sum(i.size for i in items if i.removable)
+        return sum(i.size for i in items if i.removable and i.flagged)
 
 
 def du_bytes(path):
@@ -131,6 +133,7 @@ def walk_projects(roots=SCAN_ROOTS, max_depth=SCAN_MAX_DEPTH):
 
 
 def check_derived_data(now):
+    """Every DerivedData folder, largest first. Stale or orphaned ones are flagged."""
     items = []
     try:
         entries = os.listdir(DERIVED_DATA_DIR)
@@ -138,26 +141,42 @@ def check_derived_data(now):
         return items
     for name in entries:
         path = os.path.join(DERIVED_DATA_DIR, name)
-        info_path = os.path.join(path, 'info.plist')
-        if not os.path.isfile(info_path):
-            continue  # shared caches like ModuleCache.noindex
-        try:
-            with open(info_path, 'rb') as f:
-                info = plistlib.load(f)
-        except Exception:
+        if not os.path.isdir(path):
             continue
-        accessed = info.get('LastAccessedDate')
-        last = accessed.timestamp() if accessed else mtime(path)
-        workspace = info.get('WorkspacePath', '')
+        if name.endswith('.noindex') or name == 'SDKExplicitPrecompiledModules':
+            # Shared across projects; Xcode rebuilds them, but they're never "stale"
+            items.append(Item('derived_data', f'Shared: {name}', path, du_bytes(path),
+                              idle_days(mtime(path), now), 'module cache', flagged=False))
+            continue
+        workspace, last = '', 0
+        try:
+            with open(os.path.join(path, 'info.plist'), 'rb') as f:
+                info = plistlib.load(f)
+            accessed = info.get('LastAccessedDate')
+            last = accessed.timestamp() if accessed else 0
+            workspace = info.get('WorkspacePath', '')
+        except Exception:
+            pass  # some projects have no info.plist; fall back to build-log activity
+        if not last:
+            last = max(mtime(path), mtime(os.path.join(path, 'Logs', 'Build')),
+                       mtime(os.path.join(path, 'Build')))
         orphaned = bool(workspace) and not os.path.exists(workspace)
         idle = idle_days(last, now)
-        if not orphaned and idle < STALE_DERIVED_DATA_DAYS:
-            continue
-        note = 'project gone' if orphaned else f'unused {idle:.0f}d'
-        items.append(Item('derived_data', name.rsplit('-', 1)[0], path,
-                          du_bytes(path), idle, note,
-                          extra={'workspace': workspace}))
-    return items
+        stale = orphaned or idle >= STALE_DERIVED_DATA_DAYS
+        if orphaned:
+            note = 'stale: project gone'
+        elif stale:
+            note = f'stale: unused {idle:.0f}d'
+        else:
+            note = 'used today' if idle < 1 else f'used {idle:.0f}d ago'
+        items.append(Item('derived_data', name.rsplit('-', 1)[0], path, du_bytes(path), idle,
+                          note, flagged=stale, extra={'workspace': workspace}))
+    # Worktrees of one repo share a project name; tell them apart by checkout folder
+    labels = [i.label for i in items]
+    for i in items:
+        if labels.count(i.label) > 1 and i.extra.get('workspace'):
+            i.label += f" ({os.path.basename(os.path.dirname(i.extra['workspace']))})"
+    return sorted(items, key=lambda i: -i.size)
 
 
 def check_simulators(now):
@@ -185,15 +204,16 @@ def check_simulators(now):
                 continue
             if not unavailable and (idle < STALE_SIM_DAYS or size < MIN_SIM_BYTES):
                 continue
-            note = 'runtime missing' if unavailable else f'idle {idle:.0f}d'
+            note = 'unavailable: runtime missing' if unavailable else f'idle {idle:.0f}d'
             devices.append(Item('simulator', f"{d.get('name')} ({version})", device_dir,
-                                size, idle, note, extra={'udid': d.get('udid')}))
+                                size, idle, note,
+                                extra={'udid': d.get('udid'), 'unavailable': unavailable}))
     try:
         out = subprocess.run(['xcrun', 'simctl', 'runtime', 'list', '--json'],
                              capture_output=True, text=True, timeout=60).stdout
         for r in json.loads(out).values():
             last_used = r.get('lastUsedAt')
-            last_ts = time.mktime(time.strptime(last_used, '%Y-%m-%dT%H:%M:%SZ')) - time.timezone \
+            last_ts = calendar.timegm(time.strptime(last_used, '%Y-%m-%dT%H:%M:%SZ')) \
                 if last_used else 0
             runtimes.append((f"iOS {r.get('version')}", r.get('sizeBytes') or 0,
                              idle_days(last_ts, now),

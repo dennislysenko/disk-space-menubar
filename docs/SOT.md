@@ -47,9 +47,9 @@ Space that builds up while coding agents build apps and run simulators. Scanned 
 
 | Section | Flagged when | Clicking an item |
 |---|---|---|
-| Stale DerivedData | `~/Library/Developer/Xcode/DerivedData/<Project>-<hash>` whose `info.plist` `LastAccessedDate` is 7+ days old, or whose `WorkspacePath` no longer exists (e.g. a removed worktree) | Move to Trash |
+| DerivedData | Lists **every** folder in `~/Library/Developer/Xcode/DerivedData` with its size, largest first, and the section title shows the total. Folders whose `info.plist` `LastAccessedDate` (or, without one, build-log activity) is 7+ days old, or whose `WorkspacePath` no longer exists (e.g. a removed worktree), are marked stale; only those count toward "reclaimable" and "Clean up stale…". Shared module caches (`*.noindex`, `SDKExplicitPrecompiledModules`) are listed but never stale. Projects with the same name (worktrees) show their checkout folder | Move to Trash |
 | Stray build folders | Xcode `-derivedDataPath` folders (anything containing `Build/Intermediates.noindex`) and SwiftPM `.build` folders under `~/dev`, unused 7+ days | Move to Trash |
-| Idle simulators | Devices not booted for 14+ days (by `device.plist` mtime) using 50+ MB, or whose runtime is missing. Also lists installed runtimes with size, device count and last use (info only) | `simctl delete` |
+| Idle simulators | Devices not booted for 14+ days (by `device.plist` mtime) using 50+ MB. Devices whose runtime is missing ("unavailable") are always listed regardless of size or idle time, and get a **Delete N unavailable simulators…** entry that runs `xcrun simctl delete unavailable` after confirmation. Also lists installed runtimes with size, device count and last use (info only) | `simctl delete` |
 | Stale worktrees | Git worktrees under `~/dev` repos idle 7+ days, or whose folder is gone | `git worktree remove` (no `--force`; branch kept). Dirty worktrees are reveal-only |
 | Big caches | Any folder in `~/Library/Caches` or `~/.cache`, plus `~/.npm` and the pnpm store, over 1 GB | Move to Trash. macOS-managed caches and the pnpm store are reveal-only |
 | Temp & swap | Always shown: `/private/tmp`, `$TMPDIR`, swap used, uptime. Becomes **Reboot recommended** at 15 GB combined, since a reboot clears all three | Info only |
