@@ -16,6 +16,8 @@ from dataclasses import dataclass, field
 
 HOME = os.path.expanduser('~')
 DERIVED_DATA_DIR = os.path.join(HOME, 'Library/Developer/Xcode/DerivedData')
+ARCHIVES_DIR = os.path.join(HOME, 'Library/Developer/Xcode/Archives')
+SIM_DEVICES_DIR = os.path.join(HOME, 'Library/Developer/CoreSimulator/Devices')
 # Where repos (and their worktrees / ad-hoc -derivedDataPath folders) live
 SCAN_ROOTS = [os.path.join(HOME, 'dev')]
 SCAN_MAX_DEPTH = 6
@@ -33,6 +35,14 @@ STALE_SIM_DAYS = 14
 STALE_WORKTREE_DAYS = 7
 STALE_BUILD_DIR_DAYS = 7
 MIN_SIM_BYTES = 50_000_000
+# Archives past the newest N per app are flagged (old ones only matter for symbolicating
+# crashes from those exact builds)
+KEEP_ARCHIVES_PER_APP = 2
+# Inside each simulator: app containers left behind by reinstalls (containermanagerd never
+# reaps them) and the unified log store. Both are safe to drop while the device is shut down
+SIM_JUNK_SUBPATHS = ['data/Library/Caches/com.apple.containermanagerd/Dead',
+                     'data/var/db/diagnostics', 'data/var/db/uuidtext']
+MIN_SIM_JUNK_BYTES = 500_000_000
 # Temp + swap at or above this suggests a reboot (both are cleared on boot)
 REBOOT_RECLAIM_BYTES = 15_000_000_000
 
@@ -42,7 +52,7 @@ DAY = 86400
 @dataclass
 class Item:
     """A folder or simulator that looks reclaimable."""
-    kind: str            # 'derived_data' | 'simulator' | 'worktree' | 'build_dir' | 'cache'
+    kind: str            # 'derived_data' | 'archive' | 'simulator' | 'sim_junk' | 'worktree' | 'build_dir' | 'cache'
     label: str
     path: str
     size: int
@@ -72,7 +82,9 @@ class TempStatus:
 @dataclass
 class Report:
     derived_data: list
+    archives: list
     simulators: list
+    sim_junk: list
     runtimes: list       # info only: [(label, size, last_used_days, device_count)]
     worktrees: list
     build_dirs: list
@@ -83,7 +95,8 @@ class Report:
     @property
     def cleanable_bytes(self):
         # Caches are excluded: they're in use and refill, so they shouldn't trigger the badge
-        items = self.derived_data + self.simulators + self.worktrees + self.build_dirs
+        items = (self.derived_data + self.archives + self.simulators + self.sim_junk
+                 + self.worktrees + self.build_dirs)
         return sum(i.size for i in items if i.removable and i.flagged)
 
 
@@ -229,6 +242,82 @@ def check_simulators(now):
     return devices, runtimes
 
 
+def check_archives(now):
+    """Every Xcode archive, newest first per app; all but the newest few per app are flagged."""
+    archives = []
+    try:
+        entries = os.listdir(ARCHIVES_DIR)
+    except OSError:
+        return []
+    # Xcode files archives under a date folder; scripts sometimes drop them at the top level
+    paths = []
+    for name in entries:
+        path = os.path.join(ARCHIVES_DIR, name)
+        if name.endswith('.xcarchive'):
+            paths.append(path)
+        elif os.path.isdir(path):
+            try:
+                paths += [os.path.join(path, n) for n in os.listdir(path) if n.endswith('.xcarchive')]
+            except OSError:
+                pass
+    for path in paths:
+        try:
+            with open(os.path.join(path, 'Info.plist'), 'rb') as f:
+                info = plistlib.load(f)
+        except Exception:
+            info = {}
+        props = info.get('ApplicationProperties', {})
+        app = props.get('CFBundleIdentifier') or info.get('Name') or os.path.basename(path)
+        created = info.get('CreationDate')
+        ts = calendar.timegm(created.utctimetuple()) if created else mtime(path)
+        version = props.get('CFBundleShortVersionString', '')
+        build = props.get('CFBundleVersion', '')
+        label = info.get('Name') or os.path.basename(path).removesuffix('.xcarchive')
+        if version:
+            label += f" {version}" + (f" ({build})" if build else '')
+        archives.append(Item('archive', label, path, du_bytes(path), idle_days(ts, now),
+                             extra={'app': app}))
+    items = []
+    for app in {a.extra['app'] for a in archives}:
+        group = sorted((a for a in archives if a.extra['app'] == app), key=lambda a: a.idle_days)
+        for rank, a in enumerate(group):
+            age = f"{a.idle_days:.0f}d old" if a.idle_days >= 1 else 'today'
+            if rank < KEEP_ARCHIVES_PER_APP:
+                a.flagged, a.note = False, f'{age} · kept (newest {KEEP_ARCHIVES_PER_APP})'
+            else:
+                a.note = f'{age} · older build'
+            items.append(a)
+    return sorted(items, key=lambda i: (i.flagged is False, -i.size))
+
+
+def check_sim_junk(now):
+    """Leftover app containers and logs inside shut-down simulators."""
+    items = []
+    try:
+        udids = os.listdir(SIM_DEVICES_DIR)
+    except OSError:
+        return []
+    for udid in udids:
+        device_dir = os.path.join(SIM_DEVICES_DIR, udid)
+        try:
+            with open(os.path.join(device_dir, 'device.plist'), 'rb') as f:
+                device = plistlib.load(f)
+        except Exception:
+            continue
+        if device.get('state') == 3:  # booted
+            continue
+        paths = [os.path.join(device_dir, p) for p in SIM_JUNK_SUBPATHS]
+        paths = [p for p in paths if os.path.isdir(p)]
+        size = sum(du_bytes(p) for p in paths)
+        if size < MIN_SIM_JUNK_BYTES:
+            continue
+        runtime = device.get('runtime', '').rsplit('.', 1)[-1].replace('-', ' ', 1).replace('-', '.')
+        items.append(Item('sim_junk', f"{device.get('name', udid)} ({runtime})", device_dir, size,
+                          idle_days(mtime(os.path.join(device_dir, 'device.plist')), now),
+                          'old app copies + logs', extra={'paths': paths, 'udid': udid}))
+    return sorted(items, key=lambda i: -i.size)
+
+
 def check_worktrees(repos, now):
     items = []
     for repo in repos:
@@ -337,7 +426,9 @@ def scan():
     devices, runtimes = check_simulators(now)
     return Report(
         derived_data=check_derived_data(now),
+        archives=check_archives(now),
         simulators=devices,
+        sim_junk=check_sim_junk(now),
         runtimes=runtimes,
         worktrees=check_worktrees(repos, now),
         build_dirs=check_build_dirs(build_dirs, now),
@@ -351,7 +442,8 @@ if __name__ == '__main__':
     t0 = time.time()
     report = scan()
     gb = lambda b: f'{b / 1e9:.1f} GB'
-    for title, items in (('DerivedData', report.derived_data), ('Simulators', report.simulators),
+    for title, items in (('DerivedData', report.derived_data), ('Archives', report.archives),
+                         ('Simulators', report.simulators), ('Simulator leftovers', report.sim_junk),
                          ('Worktrees', report.worktrees), ('Build folders', report.build_dirs),
                          ('Caches', report.caches)):
         print(f'== {title}')

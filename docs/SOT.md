@@ -1,6 +1,6 @@
 # Source of Truth - Disk Space Menu Bar
 
-**Last Updated:** 2026-10-28
+**Last Updated:** 2026-11-08
 
 Master reference for all features and behavior. Update this file when adding or modifying functionality.
 
@@ -48,8 +48,10 @@ Space that builds up while coding agents build apps and run simulators. Scanned 
 | Section | Flagged when | Clicking an item |
 |---|---|---|
 | DerivedData | Lists **every** folder in `~/Library/Developer/Xcode/DerivedData` with its size, largest first, and the section title shows the total. Folders whose `info.plist` `LastAccessedDate` (or, without one, build-log activity) is 7+ days old, or whose `WorkspacePath` no longer exists (e.g. a removed worktree), are marked stale; only those count toward "reclaimable" and "Clean up stale…". Shared module caches (`*.noindex`, `SDKExplicitPrecompiledModules`) are listed but never stale. Projects with the same name (worktrees) show their checkout folder | Move to Trash |
+| Xcode archives | Lists every `.xcarchive` in `~/Library/Developer/Xcode/Archives` (date folders and loose ones), grouped by app (bundle ID). The newest 2 per app are kept; older ones are marked "old" and count toward reclaimable / "Clean up old…". Old archives only matter for symbolicating crashes from those exact builds | Move to Trash |
 | Stray build folders | Xcode `-derivedDataPath` folders (anything containing `Build/Intermediates.noindex`) and SwiftPM `.build` folders under `~/dev`, unused 7+ days | Move to Trash |
 | Idle simulators | Devices not booted for 14+ days (by `device.plist` mtime) using 50+ MB. Devices whose runtime is missing ("unavailable") are always listed regardless of size or idle time, and get a **Delete N unavailable simulators…** entry that runs `xcrun simctl delete unavailable` after confirmation. Also lists installed runtimes with size, device count and last use (info only) | `simctl delete` |
+| Simulator leftovers | Inside each shut-down simulator: app containers left behind by reinstalls (`Library/Caches/com.apple.containermanagerd/Dead`, which the simulator never reaps) plus its log store (`var/db/diagnostics`, `uuidtext`), when they total 500+ MB. The device, its apps and settings are kept | Move those folders to Trash (refused if the device is booted) |
 | Stale worktrees | Git worktrees under `~/dev` repos idle 7+ days, or whose folder is gone | `git worktree remove` (no `--force`; branch kept). Dirty worktrees are reveal-only |
 | Big caches | Any folder in `~/Library/Caches` or `~/.cache`, plus `~/.npm` and the pnpm store, over 1 GB | Move to Trash. macOS-managed caches and the pnpm store are reveal-only |
 | Temp & swap | Always shown: `/private/tmp`, `$TMPDIR`, swap used, uptime. Becomes **Reboot recommended** at 15 GB combined, since a reboot clears all three | Info only |
@@ -58,7 +60,7 @@ Every removal asks for confirmation (with a "Reveal in Finder" option), and sect
 
 The menu bar title gets a `•` when 5+ GB is reclaimable and a `↻` when a reboot is recommended.
 
-Thresholds are constants at the top of `watchers.py` (`STALE_*_DAYS`, `MIN_CACHE_BYTES`, `REBOOT_RECLAIM_BYTES`, `SCAN_ROOTS`) and `disk_space.py` (`SCAN_INTERVAL_SECONDS`, `CLEANABLE_BADGE_BYTES`).
+Thresholds are constants at the top of `watchers.py` (`STALE_*_DAYS`, `KEEP_ARCHIVES_PER_APP`, `MIN_SIM_JUNK_BYTES`, `MIN_CACHE_BYTES`, `REBOOT_RECLAIM_BYTES`, `SCAN_ROOTS`) and `disk_space.py` (`SCAN_INTERVAL_SECONDS`, `CLEANABLE_BADGE_BYTES`).
 
 ### Disk Space Sources
 - `diskutil apfs list` for `Size (Capacity Ceiling)`, `Capacity In Use By Volumes`, and `Capacity Not Allocated` (the strict container view)

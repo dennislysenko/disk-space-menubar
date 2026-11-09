@@ -1,7 +1,7 @@
 # Disk Space Menu Bar - Agent Guide
 
 ## Project Overview
-Minimal macOS menu bar app showing free disk space with color-coded SF Symbol icons, plus cleanup watchers (stale DerivedData, idle simulators, stale worktrees, stray build folders, big caches, temp/swap growth). Runs as a LaunchAgent.
+Minimal macOS menu bar app showing free disk space with color-coded SF Symbol icons, plus cleanup watchers (stale DerivedData, old Xcode archives, idle simulators, simulator leftovers, stale worktrees, stray build folders, big caches, temp/swap growth). Runs as a LaunchAgent.
 
 ## Tech Stack
 - Python 3 + `rumps` (menu bar framework) + PyObjC/AppKit (SF Symbols)
@@ -21,7 +21,7 @@ Minimal macOS menu bar app showing free disk space with color-coded SF Symbol ic
 - Dock icon hidden via `LSUIElement` in bundle info dict
 - The cleanup scan (`watchers.scan()`) runs on a background thread every 15 min; a 2s main-thread timer renders the finished report, since AppKit menus must only be touched on the main thread
 - Don't name app attributes `_title` etc.: `rumps.App` uses them internally. `MenuItem.clear()` crashes on an item that has never had a submenu, so guard with `len(item)`
-- DerivedData lists every folder (sizes + total); only stale/orphaned ones are `flagged` and count toward the badge. Unavailable simulators get a one-click `simctl delete unavailable`
+- DerivedData and Xcode archives list everything (sizes + total); only stale/orphaned DerivedData and archives past the newest 2 per app are `flagged` and count toward the badge (`LIST_ALL_SECTIONS`). Simulator leftovers (dead app containers + logs) are trashed folder by folder, never on a booted device. Unavailable simulators get a one-click `simctl delete unavailable`
 - Cleanup actions are confirmed per item. Folders go to the Trash (`NSFileManager.trashItemAtURL`), simulators via `simctl delete`, worktrees via `git worktree remove` without `--force` (git refuses if dirty; the branch is kept). Simulator runtimes, macOS-managed caches, and the pnpm store are shown but never removed
 
 ## Thresholds (defined in `status_config()`)

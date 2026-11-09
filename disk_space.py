@@ -129,6 +129,18 @@ def remove_item(item):
         r = subprocess.run(['xcrun', 'simctl', 'delete', item.extra['udid']],
                            capture_output=True, text=True)
         return r.returncode == 0, r.stderr.strip()
+    if item.kind == 'sim_junk':
+        # Re-check: the device may have been booted since the scan
+        r = subprocess.run(['xcrun', 'simctl', 'list', 'devices'], capture_output=True, text=True)
+        if f"({item.extra['udid']}) (Booted)" in r.stdout:
+            return False, "That simulator is running now. Shut it down first."
+        for path in item.extra['paths']:
+            ok, err = move_to_trash(path)
+            if not ok:
+                return False, err
+            if path.endswith('/Dead'):
+                os.makedirs(path, exist_ok=True)  # containermanagerd expects the folder
+        return True, ''
     if item.kind == 'worktree':
         repo = item.extra['repo']
         # No --force: git refuses if the worktree has changes. The branch is kept.
@@ -142,12 +154,17 @@ def remove_item(item):
 # (section title, Report attribute, confirm button) in menu order
 SECTIONS = [
     ("DerivedData", 'derived_data', "Move to Trash"),
+    ("Xcode archives", 'archives', "Move to Trash"),
     ("Stray build folders", 'build_dirs', "Move to Trash"),
     ("Idle simulators", 'simulators', "Delete"),
+    ("Simulator leftovers", 'sim_junk', "Move to Trash"),
     ("Stale worktrees", 'worktrees', "Remove"),
     ("Big caches", 'caches', "Move to Trash"),
 ]
-KIND_VERBS = {'derived_data': "Move to Trash", 'build_dir': "Move to Trash",
+# Sections that list everything (with a total) and flag only part of it
+LIST_ALL_SECTIONS = {'derived_data': "stale", 'archives': "old"}
+KIND_VERBS = {'derived_data': "Move to Trash", 'archive': "Move to Trash",
+              'sim_junk': "Move to Trash", 'build_dir': "Move to Trash",
               'simulator': "Delete", 'worktree': "Remove", 'cache': "Move to Trash"}
 
 
@@ -241,11 +258,12 @@ class DiskSpaceApp(rumps.App):
             if len(section):  # rumps' clear() crashes if no submenu exists yet
                 section.clear()
             flagged = [i for i in items if i.flagged]
-            if attr == 'derived_data':
-                # Lists every folder, so lead with the total and call out the stale share
+            if attr in LIST_ALL_SECTIONS:
+                # Lists everything, so lead with the total and call out the flagged share
                 section.title = f"{title}: {fmt_size(sum(i.size for i in items))}"
                 if flagged:
-                    section.title += f" · {len(flagged)} stale ({fmt_size(sum(i.size for i in flagged))})"
+                    section.title += (f" · {len(flagged)} {LIST_ALL_SECTIONS[attr]}"
+                                      f" ({fmt_size(sum(i.size for i in flagged))})")
             else:
                 section.title = f"{title}: {len(items)} · {fmt_size(sum(i.size for i in items))}"
             for item in items:
@@ -258,7 +276,7 @@ class DiskSpaceApp(rumps.App):
             removable = [i for i in flagged if i.removable]
             if len(removable) > 1 and attr != 'caches':
                 section.add(None)
-                word = "stale" if attr == 'derived_data' else "all"
+                word = LIST_ALL_SECTIONS.get(attr, "all")
                 all_item = rumps.MenuItem(f"Clean up {word} {len(removable)}…", callback=self._on_section)
                 all_item.section_attr = attr
                 section.add(all_item)
