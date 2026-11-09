@@ -211,7 +211,13 @@ def check_simulators(now):
     try:
         out = subprocess.run(['xcrun', 'simctl', 'runtime', 'list', '--json'],
                              capture_output=True, text=True, timeout=60).stdout
+        seen_paths = set()
         for r in json.loads(out).values():
+            # Interrupted deletes leave "Deleting" ghosts that point at the same disk image
+            # as the live runtime; count each image once
+            if r.get('state') == 'Deleting' or r.get('path') in seen_paths:
+                continue
+            seen_paths.add(r.get('path'))
             last_used = r.get('lastUsedAt')
             last_ts = calendar.timegm(time.strptime(last_used, '%Y-%m-%dT%H:%M:%SZ')) \
                 if last_used else 0
