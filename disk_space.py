@@ -227,7 +227,11 @@ class DiskSpaceApp(rumps.App):
 
     def _scan_worker(self):
         try:
-            self._pending_report = watchers.scan()
+            report = watchers.scan()
+            trash = "no access" if report.trash_bytes is None else fmt_size(report.trash_bytes)
+            print(f"{time.strftime('%Y-%m-%d %H:%M')} scan: {fmt_size(report.cleanable_bytes)} "
+                  f"reclaimable, Trash {trash}", flush=True)
+            self._pending_report = report
         except Exception as e:
             print(f"Cleanup scan failed: {e}")
         finally:
