@@ -10,7 +10,8 @@ Minimal macOS menu bar app showing free disk space with color-coded SF Symbol ic
 ## Key Files
 - `disk_space.py` — menu bar app and cleanup actions
 - `watchers.py` — read-only cleanup scans; `venv/bin/python watchers.py` prints a report
-- `com.diskspace.menubar.plist` — LaunchAgent config (currently has hardcoded paths)
+- `com.diskspace.menubar.plist` — LaunchAgent template; `install.sh` fills in paths, builds the app and installs it
+- `launcher/main.swift` — the app's launcher
 - `restart_service.sh` — service restart helper
 - `docs/SOT.md` — source of truth for all features and thresholds
 
@@ -22,7 +23,7 @@ Minimal macOS menu bar app showing free disk space with color-coded SF Symbol ic
 - The cleanup scan (`watchers.scan()`) runs on a background thread every 15 min; a 2s main-thread timer renders the finished report, since AppKit menus must only be touched on the main thread
 - Don't name app attributes `_title` etc.: `rumps.App` uses them internally. `MenuItem.clear()` crashes on an item that has never had a submenu, so guard with `len(item)`
 - DerivedData and Xcode archives list everything (sizes + total); only stale/orphaned DerivedData and archives past the newest 2 per app are `flagged` and count toward the badge (`LIST_ALL_SECTIONS`). Simulator leftovers (dead app containers + logs) are trashed folder by folder, never on a booted device. Unavailable simulators get a one-click `simctl delete unavailable`
-- Reading `~/.Trash` is TCC-protected: the LaunchAgent's Python.app needs Full Disk Access, otherwise `check_trash()` returns None and the menu says so
+- The LaunchAgent runs `build/Disk Space.app` (built by `install.sh` from `launcher/main.swift`), which starts the Python script as a child so macOS privacy grants attach to the app, not to Python. Reading `~/.Trash` needs Full Disk Access for that app; without it `check_trash()` returns None and the menu says so. The app is ad-hoc signed: rebuilding it needs a fresh grant
 - Cleanup actions are confirmed per item. Folders go to the Trash (`NSFileManager.trashItemAtURL`), simulators via `simctl delete`, worktrees via `git worktree remove` without `--force` (git refuses if dirty; the branch is kept). Simulator runtimes, macOS-managed caches, and the pnpm store are shown but never removed
 
 ## Thresholds (defined in `status_config()`)
@@ -46,4 +47,4 @@ tail -f ~/Library/Logs/diskspace-error.log
 ```
 
 ## TODO
-- [ ] Replace hardcoded `/Users/dennis/...` paths in `com.diskspace.menubar.plist` with an install script that auto-detects the user's home directory and project path
+- [x] Replace hardcoded paths in `com.diskspace.menubar.plist` with an install script (`install.sh`)

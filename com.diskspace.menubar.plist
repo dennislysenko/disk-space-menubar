@@ -1,6 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
+<!-- Template: install.sh fills in __APP__, __REPO__ and __HOME__ -->
 <dict>
     <key>Label</key>
     <string>com.diskspace.menubar</string>
@@ -10,8 +11,7 @@
 
     <key>ProgramArguments</key>
     <array>
-        <string>/Users/dennis/dev/disk-space-menubar/venv/bin/python</string>
-        <string>/Users/dennis/dev/disk-space-menubar/disk_space.py</string>
+        <string>__APP__</string>
     </array>
 
     <key>RunAtLoad</key>
@@ -21,12 +21,12 @@
     <true/>
 
     <key>StandardErrorPath</key>
-    <string>/Users/dennis/Library/Logs/diskspace-error.log</string>
+    <string>__HOME__/Library/Logs/diskspace-error.log</string>
 
     <key>StandardOutPath</key>
-    <string>/Users/dennis/Library/Logs/diskspace-output.log</string>
+    <string>__HOME__/Library/Logs/diskspace-output.log</string>
 
     <key>WorkingDirectory</key>
-    <string>/Users/dennis/dev/disk-space-menubar</string>
+    <string>__REPO__</string>
 </dict>
 </plist>

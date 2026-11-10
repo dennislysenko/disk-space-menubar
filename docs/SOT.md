@@ -54,7 +54,7 @@ Space that builds up while coding agents build apps and run simulators. Scanned 
 | Simulator leftovers | Inside each shut-down simulator: app containers left behind by reinstalls (`Library/Caches/com.apple.containermanagerd/Dead`, which the simulator never reaps) plus its log store (`var/db/diagnostics`, `uuidtext`), when they total 500+ MB. The device, its apps and settings are kept | Move those folders to Trash (refused if the device is booted) |
 | Stale worktrees | Git worktrees under `~/dev` repos idle 7+ days, or whose folder is gone | `git worktree remove` (no `--force`; branch kept). Dirty worktrees are reveal-only |
 | Big caches | Any folder in `~/Library/Caches` or `~/.cache`, plus `~/.npm` and the pnpm store, over 1 GB | Move to Trash. macOS-managed caches and the pnpm store are reveal-only |
-| Trash | Shown once the Trash holds 100+ MB: its size, which only comes back when you empty it. Counts toward the `•` badge. Reading `~/.Trash` needs Full Disk Access for the Python that runs the app (Python.app inside the Homebrew `python@3.14` Cellar; re-grant after a Python upgrade); without it the row says so | Opens the Trash in Finder |
+| Trash | Shown once the Trash holds 100+ MB: its size, which only comes back when you empty it. Counts toward the `•` badge. Reading `~/.Trash` needs Full Disk Access for `build/Disk Space.app`; without it the row says so | Opens the Trash in Finder |
 | Temp & swap | Always shown: `/private/tmp`, `$TMPDIR`, swap used, uptime. Becomes **Reboot recommended** at 15 GB combined, since a reboot clears all three | Info only |
 
 Every removal asks for confirmation (with a "Reveal in Finder" option), and sections with 2+ removable items get a **Clean up all…** entry. Caches are not counted toward "reclaimable" since they're in use and refill.
@@ -84,7 +84,9 @@ Thresholds are constants at the top of `watchers.py` (`STALE_*_DAYS`, `KEEP_ARCH
 | `disk_space.py` | Main app: menu, icon, cleanup actions |
 | `watchers.py` | Read-only cleanup scans; run directly to print a report |
 | `requirements.txt` | Python dependencies (just `rumps`) |
-| `com.diskspace.menubar.plist` | LaunchAgent config |
+| `com.diskspace.menubar.plist` | LaunchAgent template (filled in by `install.sh`) |
+| `install.sh` | Builds `Disk Space.app` and installs the LaunchAgent |
+| `launcher/main.swift` | The app's launcher: runs the script as a child |
 | `restart_service.sh` | Service restart helper |
 
 ### Key Implementation Details
@@ -99,9 +101,11 @@ Thresholds are constants at the top of `watchers.py` (`STALE_*_DAYS`, `KEEP_ARCH
 
 ### Install as LaunchAgent
 ```bash
-cp com.diskspace.menubar.plist ~/Library/LaunchAgents/
-launchctl load ~/Library/LaunchAgents/com.diskspace.menubar.plist
+./install.sh
 ```
+Builds `build/Disk Space.app` (gitignored): a Swift launcher (`launcher/main.swift`) that starts `venv/bin/python disk_space.py` as a child process and forwards stop signals to it. The repo path is written into the app's Info.plist (`DSRepoPath`). `com.diskspace.menubar.plist` is a template; `install.sh` fills in the paths and installs it, then restarts the service.
+
+The app exists so macOS privacy permissions attach to it: a child process is credited to the app that launched it, so Full Disk Access granted to `Disk Space.app` covers the script without granting it to the Homebrew Python. The app is ad-hoc signed, so rebuilding it needs a fresh grant.
 
 ### Restart
 ```bash
