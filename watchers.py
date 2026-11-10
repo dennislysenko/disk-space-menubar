@@ -18,6 +18,7 @@ HOME = os.path.expanduser('~')
 DERIVED_DATA_DIR = os.path.join(HOME, 'Library/Developer/Xcode/DerivedData')
 ARCHIVES_DIR = os.path.join(HOME, 'Library/Developer/Xcode/Archives')
 SIM_DEVICES_DIR = os.path.join(HOME, 'Library/Developer/CoreSimulator/Devices')
+TRASH_DIR = os.path.join(HOME, '.Trash')
 # Where repos (and their worktrees / ad-hoc -derivedDataPath folders) live
 SCAN_ROOTS = [os.path.join(HOME, 'dev')]
 SCAN_MAX_DEPTH = 6
@@ -90,6 +91,7 @@ class Report:
     build_dirs: list
     caches: list
     temp: TempStatus
+    trash_bytes: object  # int, or None when macOS denies access to ~/.Trash
     scanned_at: float
 
     @property
@@ -420,6 +422,18 @@ def check_temp(now):
     return TempStatus(du_bytes('/private/tmp'), user_temp, swap, (now - boot_ts) / DAY)
 
 
+def check_trash():
+    """Bytes waiting in the Trash, freed only when it's emptied. None if access is denied
+    (reading ~/.Trash needs Full Disk Access for the process running the app)."""
+    try:
+        os.listdir(TRASH_DIR)
+    except PermissionError:
+        return None
+    except OSError:
+        return 0
+    return du_bytes(TRASH_DIR)
+
+
 def scan():
     now = time.time()
     repos, build_dirs = walk_projects()
@@ -434,6 +448,7 @@ def scan():
         build_dirs=check_build_dirs(build_dirs, now),
         caches=check_caches(now),
         temp=check_temp(now),
+        trash_bytes=check_trash(),
         scanned_at=now,
     )
 
@@ -455,4 +470,5 @@ if __name__ == '__main__':
     t = report.temp
     print(f'== Temp: /private/tmp {gb(t.tmp_bytes)}, $TMPDIR {gb(t.user_temp_bytes)}, '
           f'swap {gb(t.swap_bytes)}, up {t.uptime_days:.1f}d, reboot due: {t.reboot_due}')
+    print(f'== Trash: {"no access" if report.trash_bytes is None else gb(report.trash_bytes)}')
     print(f'cleanable {gb(report.cleanable_bytes)}, scan took {time.time() - t0:.1f}s')

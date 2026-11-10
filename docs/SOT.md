@@ -1,6 +1,6 @@
 # Source of Truth - Disk Space Menu Bar
 
-**Last Updated:** 2026-11-08
+**Last Updated:** 2026-11-09
 
 Master reference for all features and behavior. Update this file when adding or modifying functionality.
 
@@ -54,6 +54,7 @@ Space that builds up while coding agents build apps and run simulators. Scanned 
 | Simulator leftovers | Inside each shut-down simulator: app containers left behind by reinstalls (`Library/Caches/com.apple.containermanagerd/Dead`, which the simulator never reaps) plus its log store (`var/db/diagnostics`, `uuidtext`), when they total 500+ MB. The device, its apps and settings are kept | Move those folders to Trash (refused if the device is booted) |
 | Stale worktrees | Git worktrees under `~/dev` repos idle 7+ days, or whose folder is gone | `git worktree remove` (no `--force`; branch kept). Dirty worktrees are reveal-only |
 | Big caches | Any folder in `~/Library/Caches` or `~/.cache`, plus `~/.npm` and the pnpm store, over 1 GB | Move to Trash. macOS-managed caches and the pnpm store are reveal-only |
+| Trash | Shown once the Trash holds 100+ MB: its size, which only comes back when you empty it. Counts toward the `•` badge. Reading `~/.Trash` needs Full Disk Access for the Python that runs the app (Python.app inside the Homebrew `python@3.14` Cellar; re-grant after a Python upgrade); without it the row says so | Opens the Trash in Finder |
 | Temp & swap | Always shown: `/private/tmp`, `$TMPDIR`, swap used, uptime. Becomes **Reboot recommended** at 15 GB combined, since a reboot clears all three | Info only |
 
 Every removal asks for confirmation (with a "Reveal in Finder" option), and sections with 2+ removable items get a **Clean up all…** entry. Caches are not counted toward "reclaimable" since they're in use and refill.

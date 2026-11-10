@@ -17,6 +17,8 @@ import watchers
 SCAN_INTERVAL_SECONDS = 15 * 60
 # Title gets a "•" once this much is reclaimable, and "↻" when a reboot would help
 CLEANABLE_BADGE_BYTES = 5_000_000_000
+# The Trash row shows once it holds this much (it counts toward the "•" badge too)
+TRASH_SHOW_BYTES = 100_000_000
 
 # Matches what Finder / System Settings report (includes purgeable space:
 # snapshots, evictable iCloud files, caches, etc.)
@@ -183,6 +185,7 @@ class DiskSpaceApp(rumps.App):
         self._cleanup_header = rumps.MenuItem("Cleanup: scanning…")
         self._section_items = {attr: rumps.MenuItem(title) for title, attr, _ in SECTIONS}
         self._temp_item = rumps.MenuItem("Temp & swap")
+        self._trash_item = rumps.MenuItem("Trash", callback=self._open_trash)
         self.menu = [
             self._total_item,
             self._used_item,
@@ -192,11 +195,12 @@ class DiskSpaceApp(rumps.App):
             self._cleanup_header,
             *self._section_items.values(),
             self._temp_item,
+            self._trash_item,
             rumps.MenuItem("Rescan now", callback=self._rescan),
             None,
             rumps.MenuItem("Quit", callback=rumps.quit_application),
         ]
-        for item in (*self._section_items.values(), self._temp_item):
+        for item in (*self._section_items.values(), self._temp_item, self._trash_item):
             item.hidden = True
         if info:
             self._update_menu_items(*info)
@@ -206,7 +210,7 @@ class DiskSpaceApp(rumps.App):
             return "??GB"
         badge = ""
         if self._report:
-            if self._report.cleanable_bytes >= CLEANABLE_BADGE_BYTES:
+            if self._report.cleanable_bytes + (self._report.trash_bytes or 0) >= CLEANABLE_BADGE_BYTES:
                 badge += " •"
             if self._report.temp.reboot_due:
                 badge += " ↻"
@@ -308,7 +312,17 @@ class DiskSpaceApp(rumps.App):
             rumps.MenuItem(f"Up {t.uptime_days:.1f} days · all of the above clears on reboot"),
         ])
         self._temp_item.hidden = False
+
+        trash = report.trash_bytes
+        if trash is None:
+            self._trash_item.title = "Trash: size unknown (give Python Full Disk Access)"
+        else:
+            self._trash_item.title = f"Trash: {fmt_size(trash)} · freed when you empty it"
+        self._trash_item.hidden = trash is not None and trash < TRASH_SHOW_BYTES
         self._update_cleanup_header()
+
+    def _open_trash(self, _):
+        subprocess.run(['open', os.path.expanduser('~/.Trash')])
 
     def _on_item(self, sender):
         item = sender.cleanup_item
