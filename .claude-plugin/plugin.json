@@ -1,0 +1,10 @@
+{
+  "name": "mac-disk-cleanup",
+  "version": "1.0.0",
+  "description": "Find and safely reclaim regenerable disk space on a developer Mac (Xcode, simulators, caches, temp Chrome copies, node_modules, worktrees), and install the Disk Space menubar app.",
+  "author": { "name": "Dennis Lysenko" },
+  "homepage": "https://github.com/dennislysenko/disk-space-menubar",
+  "repository": "https://github.com/dennislysenko/disk-space-menubar",
+  "license": "MIT",
+  "keywords": ["macos", "disk", "cleanup", "xcode"]
+}

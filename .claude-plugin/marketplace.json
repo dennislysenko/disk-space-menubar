@@ -1,0 +1,11 @@
+{
+  "name": "disk-space-menubar",
+  "owner": { "name": "Dennis Lysenko" },
+  "plugins": [
+    {
+      "name": "mac-disk-cleanup",
+      "source": "./",
+      "description": "Find and safely reclaim regenerable disk space on a developer Mac, and install the Disk Space menubar app."
+    }
+  ]
+}
