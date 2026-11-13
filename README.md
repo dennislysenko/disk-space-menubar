@@ -46,6 +46,25 @@ Restart after changes:
 ~/Library/Logs/diskspace-error.log
 ```
 
+## Claude Code skill
+
+This repo is also a Claude Code plugin with a `mac-disk-cleanup` skill. It crawls a Mac for space that rebuilds by itself (DerivedData, simulator leftovers, temp Chrome copies, package caches, stale `node_modules`, worktrees), lists it in a few lines, moves only what you approve to the Trash, and can install this menu bar app for you.
+
+In Claude Code (terminal or the desktop app):
+
+```
+/plugin install mac-disk-cleanup --marketplace dennislysenko/disk-space-menubar
+```
+
+On older Claude Code versions, add the marketplace first:
+
+```
+/plugin marketplace add dennislysenko/disk-space-menubar
+/plugin install mac-disk-cleanup@disk-space-menubar
+```
+
+Then ask "free up disk space" or run `/mac-disk-cleanup`.
+
 ## License
 
 MIT
