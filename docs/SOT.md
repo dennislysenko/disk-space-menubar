@@ -1,6 +1,6 @@
 # Source of Truth - Disk Space Menu Bar
 
-**Last Updated:** 2026-04-05
+**Last Updated:** 2026-11-09
 
 Master reference for all features and behavior. Update this file when adding or modifying functionality.
 
@@ -38,7 +38,30 @@ Click the menu bar item to see:
 - **Available:** what Finder/System Settings reports — unallocated + purgeable (snapshots, evictable iCloud files, caches)
 - **Unallocated:** strict "right now, no reclaiming needed" free space from the APFS container
 - Separator
+- Cleanup sections (see below), then **Rescan now**
+- Separator
 - Quit button
+
+### Cleanup Watchers
+Space that builds up while coding agents build apps and run simulators. Scanned by `watchers.py` on a background thread at launch and every 15 minutes (~10 s per scan). The header shows the total reclaimable and when it was last scanned. Each section lists its items with size and reason, and is hidden when empty.
+
+| Section | Flagged when | Clicking an item |
+|---|---|---|
+| DerivedData | Lists **every** folder in `~/Library/Developer/Xcode/DerivedData` with its size, largest first, and the section title shows the total. Folders whose `info.plist` `LastAccessedDate` (or, without one, build-log activity) is 7+ days old, or whose `WorkspacePath` no longer exists (e.g. a removed worktree), are marked stale; only those count toward "reclaimable" and "Clean up stale…". Shared module caches (`*.noindex`, `SDKExplicitPrecompiledModules`) are listed but never stale. Projects with the same name (worktrees) show their checkout folder | Move to Trash |
+| Xcode archives | Lists every `.xcarchive` in `~/Library/Developer/Xcode/Archives` (date folders and loose ones), grouped by app (bundle ID). The newest 2 per app are kept; older ones are marked "old" and count toward reclaimable / "Clean up old…". Old archives only matter for symbolicating crashes from those exact builds | Move to Trash |
+| Stray build folders | Xcode `-derivedDataPath` folders (anything containing `Build/Intermediates.noindex`) and SwiftPM `.build` folders under `~/dev`, unused 7+ days | Move to Trash |
+| Idle simulators | Devices not booted for 14+ days (by `device.plist` mtime) using 50+ MB. Devices whose runtime is missing ("unavailable") are always listed regardless of size or idle time, and get a **Delete N unavailable simulators…** entry that runs `xcrun simctl delete unavailable` after confirmation. Also lists installed runtimes with size, device count and last use (info only) | `simctl delete` |
+| Simulator leftovers | Inside each shut-down simulator: app containers left behind by reinstalls (`Library/Caches/com.apple.containermanagerd/Dead`, which the simulator never reaps) plus its log store (`var/db/diagnostics`, `uuidtext`), when they total 500+ MB. The device, its apps and settings are kept | Move those folders to Trash (refused if the device is booted) |
+| Stale worktrees | Git worktrees under `~/dev` repos idle 7+ days, or whose folder is gone | `git worktree remove` (no `--force`; branch kept). Dirty worktrees are reveal-only |
+| Big caches | Any folder in `~/Library/Caches` or `~/.cache`, plus `~/.npm` and the pnpm store, over 1 GB | Move to Trash. macOS-managed caches and the pnpm store are reveal-only |
+| Trash | Shown once the Trash holds 100+ MB: its size, which only comes back when you empty it. Counts toward the `•` badge. Reading `~/.Trash` needs Full Disk Access for `build/Disk Space.app`; without it the row says so | Opens the Trash in Finder |
+| Temp & swap | Always shown: `/private/tmp`, `$TMPDIR`, swap used, uptime. Becomes **Reboot recommended** at 15 GB combined, since a reboot clears all three | Info only |
+
+Every removal asks for confirmation (with a "Reveal in Finder" option), and sections with 2+ removable items get a **Clean up all…** entry. Caches are not counted toward "reclaimable" since they're in use and refill.
+
+The menu bar title gets a `•` when 5+ GB is reclaimable and a `↻` when a reboot is recommended.
+
+Thresholds are constants at the top of `watchers.py` (`STALE_*_DAYS`, `KEEP_ARCHIVES_PER_APP`, `MIN_SIM_JUNK_BYTES`, `MIN_CACHE_BYTES`, `REBOOT_RECLAIM_BYTES`, `SCAN_ROOTS`) and `disk_space.py` (`SCAN_INTERVAL_SECONDS`, `CLEANABLE_BADGE_BYTES`).
 
 ### Disk Space Sources
 - `diskutil apfs list` for `Size (Capacity Ceiling)`, `Capacity In Use By Volumes`, and `Capacity Not Allocated` (the strict container view)
@@ -58,9 +81,12 @@ Click the menu bar item to see:
 
 | File | Purpose |
 |---|---|
-| `disk_space.py` | Main app (~125 lines) |
+| `disk_space.py` | Main app: menu, icon, cleanup actions |
+| `watchers.py` | Read-only cleanup scans; run directly to print a report |
 | `requirements.txt` | Python dependencies (just `rumps`) |
-| `com.diskspace.menubar.plist` | LaunchAgent config |
+| `com.diskspace.menubar.plist` | LaunchAgent template (filled in by `install.sh`) |
+| `install.sh` | Builds `Disk Space.app` and installs the LaunchAgent |
+| `launcher/main.swift` | The app's launcher: runs the script as a child |
 | `restart_service.sh` | Service restart helper |
 
 ### Key Implementation Details
@@ -75,9 +101,11 @@ Click the menu bar item to see:
 
 ### Install as LaunchAgent
 ```bash
-cp com.diskspace.menubar.plist ~/Library/LaunchAgents/
-launchctl load ~/Library/LaunchAgents/com.diskspace.menubar.plist
+./install.sh
 ```
+Builds `build/Disk Space.app` (gitignored): a Swift launcher (`launcher/main.swift`) that starts `venv/bin/python disk_space.py` as a child process and forwards stop signals to it. The repo path is written into the app's Info.plist (`DSRepoPath`). `com.diskspace.menubar.plist` is a template; `install.sh` fills in the paths and installs it, then restarts the service.
+
+The app exists so macOS privacy permissions attach to it: a child process is credited to the app that launched it, so Full Disk Access granted to `Disk Space.app` covers the script without granting it to the Homebrew Python. The app is ad-hoc signed, so rebuilding it needs a fresh grant.
 
 ### Restart
 ```bash

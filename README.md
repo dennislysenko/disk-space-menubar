@@ -28,10 +28,10 @@ venv/bin/python disk_space.py
 ### Run on login
 
 ```bash
-# Edit com.diskspace.menubar.plist to match your paths if needed, then:
-cp com.diskspace.menubar.plist ~/Library/LaunchAgents/
-launchctl load ~/Library/LaunchAgents/com.diskspace.menubar.plist
+./install.sh
 ```
+
+This builds `build/Disk Space.app`, a small launcher that runs `disk_space.py`, and installs a LaunchAgent for it. To let the menu show how much is in the Trash, add `build/Disk Space.app` under System Settings › Privacy & Security › Full Disk Access. The permission belongs to that app only, not to Python. Rebuilding the app (re-running `install.sh`) needs the permission granted again.
 
 Restart after changes:
 
