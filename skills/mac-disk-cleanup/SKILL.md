@@ -10,7 +10,7 @@ Find space that rebuilds or re-downloads by itself, show a short list, and move 
 ## Rules
 
 1. **Report first, delete nothing** until the user picks items.
-2. **Trash, never `rm`.** Use `trash <path>…` (built into macOS 26+ at `/usr/bin/trash`; on older macOS use `brew install trash`, or `osascript -e 'tell application "Finder" to delete POSIX file "<path>"'`). Tool-native cleanup commands (`brew cleanup -s`, `pnpm store prune`, `xcrun simctl delete unavailable`, `npm cache clean --force`) are fine.
+2. **Trash, never `rm`.** Use `clean.sh` (below), which calls `trash <path>…` (built into macOS 26+ at `/usr/bin/trash`; on older macOS use `brew install trash`, or `osascript -e 'tell application "Finder" to delete POSIX file "<path>"'`). Tool-native cleanup commands (`brew cleanup -s`, `pnpm store prune`, `xcrun simctl delete unavailable`, `npm cache clean --force`) are fine.
 3. **Never remove the only copy of something.** Photos, Messages, Notes, WhatsApp, Mail, Documents, Downloads, chat/session logs and app data are not "ephemeral" even when large. Ask whether the Mac has a backup; if not, say so.
 4. **Check for live use before trashing shared build state.** Run `pgrep -fl 'xcodebuild|XCBBuildService|swift-build'` and `xcrun simctl list devices booted`. If anything is building or booted, skip SwiftPM caches, DerivedData and simulator data (or ask). Removing a SwiftPM cache mid-build leaves half-cloned packages.
 5. **Report as short bullets, 15–20 lines max**: number, what, size, how it comes back. Lead with the safe items; put "your call" items in a line or two.
@@ -18,15 +18,39 @@ Find space that rebuilds or re-downloads by itself, show a short list, and move 
 
 ## Steps
 
-1. Run the scanner (read-only):
-1. Run the scanner (read-only). It sits next to this SKILL.md, in this skill's base directory:
-   bash "<this skill's base directory>/scan.sh"            # options: --dev-root ~/code --idle-days 30
+All scripts sit next to this SKILL.md, in this skill's base directory (`$SKILL` below). History lives in `~/.local/share/mac-disk-cleanup/` (`findings.tsv`, `cleaned.tsv`).
+
+1. **Start a full scan in the background** with the [disk-analyzer CLI](https://github.com/dennislysenko/macos-disk-analyzer) (takes ~3–10 min; its snapshots are what `changes` compares):
+   ```bash
+   SCANS=$(sed -n 's/^output_dir *= *"\(.*\)"/\1/p' ~/.config/disk-analyzer/config.toml 2>/dev/null); SCANS=${SCANS:-$HOME/.local/share/mac-disk-cleanup/scans}; SCANS=${SCANS/#\~/$HOME}
+   disk-analyzer scan ~ -q -m 1 -o "$SCANS"      # run_in_background
+   ```
+   If `disk-analyzer` isn't installed, offer to install it once (`curl -fsSL https://raw.githubusercontent.com/dennislysenko/macos-disk-analyzer/main/install.sh | sh`) and skip this step if they decline.
+2. **Run the quick scanner** (read-only, ~1 min; also appends to `findings.tsv`):
+   ```bash
+   bash "$SKILL/scan.sh"            # options: --dev-root ~/code --idle-days 30 --no-log
    ```
    Each line is `GB|category|path|note`. The first two lines show free space, Trash, swap, live builds and booted simulators.
-2. Sort by size and group into **safe** (table below) vs **your call** vs **keep**. Look at anything big the scanner doesn't cover with `du -sk ~/* ~/Library/* ~/Library/Application\ Support/* ~/Library/Containers/* ~/Library/Group\ Containers/* | sort -rn | head`.
-3. Present the bullet list and ask which numbers to remove.
-4. On approval: re-run the live-use check, then `trash` the paths. For simulator leftovers, recreate the emptied `…/com.apple.containermanagerd/Dead` folder (`mkdir -p`). For worktrees: `trash <worktree>` then `git -C <repo> worktree prune` (the branch stays). Never `git worktree remove --force` a worktree with uncommitted changes.
-5. Report: what went, total size, Trash size, free space before/after.
+3. **Check what keeps coming back and what grew:**
+   ```bash
+   bash "$SKILL/recurring.sh"                       # categories cleaned before that are back
+   disk-analyzer changes --days 7 -o "$SCANS"      # after the background scan finishes
+   ```
+4. **Report** (bullets, rule 5): the safe items ranked by size (table below), then at most two extra lines: **Recurring** (category, how often, GB each time, and the likely cause from *Recurring culprits* below) and **Growing** (top 1–3 folders from `changes` that aren't already in the list, with what they are). Ask which numbers to remove.
+5. **On approval:** re-run the live-use check, then move each group with
+   ```bash
+   bash "$SKILL/clean.sh" <Category> <path>...      # trashes and records in cleaned.tsv
+   ```
+   using the scan.sh category name, so `recurring.sh` can track it. For simulator leftovers, recreate the emptied `…/com.apple.containermanagerd/Dead` folder (`mkdir -p`). For worktrees, `git -C <repo> worktree prune` afterwards (the branch stays). Never `git worktree remove --force` a worktree with uncommitted changes. Tool-native commands (`brew cleanup -s`, `pnpm store prune`) don't go through clean.sh.
+6. **Report:** what went, total size, Trash size, free space before/after.
+
+## Recurring culprits (what to say when something keeps coming back)
+
+- **ChromeClones**: an automation tool (Playwright, Puppeteer, Claude in Chrome) is killing Chrome instead of closing it. Close browsers cleanly at the end of runs, or use Playwright's bundled Chromium instead of the installed Chrome.
+- **DerivedData** for the same project: parallel worktrees or agents each get their own DerivedData; trash ones whose worktree is gone.
+- **SimLeftovers**: frequent reinstalls on the same simulator; reset that simulator (`xcrun simctl erase <udid>`) when it's not in use.
+- **XcodeExportTemp**: archive exports/uploads; harmless to clear after each release.
+- **Swap** above ~10 GB: too many simulators or apps at once for the RAM; a restart clears it.
 
 ## Install the Disk Space menubar app (optional, offer once)
 

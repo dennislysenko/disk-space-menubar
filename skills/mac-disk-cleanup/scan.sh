@@ -1,23 +1,34 @@
 #!/bin/bash
 # Report regenerable ("ephemeral") disk space on a Mac. Read-only: deletes nothing.
 # Output: one line per finding:  <GB>|<category>|<path>|<note>
-# Usage: scan.sh [--dev-root ~/dev] [--idle-days 30]
+# Each finding is also appended to $DATA_DIR/findings.tsv (date, category, path, KB)
+# so recurring.sh can spot what keeps coming back.
+# Usage: scan.sh [--dev-root ~/dev] [--idle-days 30] [--no-log]
 set -u
 shopt -s nullglob
 
 DEV_ROOT="$HOME/dev"
 IDLE_DAYS=30
+DATA_DIR="${MAC_DISK_CLEANUP_DATA:-$HOME/.local/share/mac-disk-cleanup}"
+LOG="$DATA_DIR/findings.tsv"
+RUN=$(date '+%Y-%m-%d %H:%M')
 while [ $# -gt 0 ]; do
   case "$1" in
     --dev-root) DEV_ROOT="$2"; shift 2 ;;
     --idle-days) IDLE_DAYS="$2"; shift 2 ;;
+    --no-log) LOG=""; shift ;;
     *) echo "unknown arg $1" >&2; exit 2 ;;
   esac
 done
 
 kb() { du -sk "$@" 2>/dev/null | awk '{s+=$1} END{print s+0}'; }
+if [ -n "$LOG" ]; then
+  mkdir -p "$DATA_DIR"
+  [ -f "$LOG" ] || printf 'date\tcategory\tpath\tkb\n' > "$LOG"
+fi
 emit() { # kb category path note
   [ "$1" -lt 51200 ] && return   # skip anything under 50 MB
+  [ -n "$LOG" ] && printf '%s\t%s\t%s\t%s\n' "$RUN" "$2" "$3" "$1" >> "$LOG"
   awk -v k="$1" -v c="$2" -v p="$3" -v n="$4" 'BEGIN{printf "%.1f|%s|%s|%s\n", k/1048576, c, p, n}'
 }
 
@@ -32,7 +43,7 @@ echo "# live: builds=$(pgrep -f 'xcodebuild|XCBBuildService|swift-build' | wc -l
 # --- Xcode ---
 for d in "$XC"/DerivedData/*/; do
   d=${d%/}; n=${d##*/}
-  ws=$(/usr/libexec/PlistBuddy -c 'Print :WorkspacePath' "$d/info.plist" 2>/dev/null)
+  ws=""; [ -f "$d/info.plist" ] && ws=$(/usr/libexec/PlistBuddy -c 'Print :WorkspacePath' "$d/info.plist" 2>/dev/null)
   if [ -z "$ws" ]; then note="shared module cache, rebuilt on next build"
   elif [ ! -e "$ws" ]; then note="ORPHAN: project gone ($ws)"
   else note="project: $ws (last built $(stat -f %Sm -t %F "$d"))"; fi
